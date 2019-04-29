@@ -1,0 +1,54 @@
+#VM üzerinde Ubuntu 19.04 versiyonunda test edilmiştir.
+#Docker 'i indirmek için aşağıdaki komutu uygulayın,
+sudo apt-get install docker.io
+
+#Programlarımız kafka, zookeeper, elasticsearch ve kibana sunucularını kullanmaktadır.
+#Aynı network çatısında toplamak için aşağıdaki komutu uygulayın,
+sudo docker network create --driver=bridge --subnet=192.168.0.0/16 br1
+
+#Elasticsearch ve kibana 'yı indirip çalıştırmak için aşağıdaki iki satırdaki komutları ayrı ayrı uygulayın,
+sudo docker pull selkes87/es_kibana
+sudo docker run -d -p 9200:9200 --network br1 --env TZ="UTC" --ip=192.168.0.101 -p 5601:5601 --name es_kibana selkes87/es_kibana
+
+#Kafka ve zookeeper 'ı indirip çalıştırmak için aşağıdaki iki satırdaki komutları ayrı ayrı uygulayın,
+sudo docker pull spotify/kafka
+sudo docker run -d -p 2181:2181 -p 9092:9092 --network br1 --ip=192.168.0.100 --env AUTO_OFFSET_RESET_CONFIG=earliest --env ZOOKEEPER_IP=localhost:2181 --env ADVERTISED_PORT=9092 --env KAFKA_DELETE_TOPIC_ENABLE=true --name kafka spotify/kafka
+
+#Python 'u indirmek için aşağıdaki komutu uygulayın,
+sudo docker pull python
+
+################################################
+
+#Log producer 'i indirmek için aşağıdaki komutu uygulayın, bu program 2MB 'lık log dosyaları oluşturur.
+sudo docker pull selkes87/python-log_producer
+#Log dosyalarının kaydedileceği volume 'u aşağıdaki komutla oluşturalım,
+sudo docker volume create --name logs
+#Log producer 'i çalıştırmak için aşağıdaki komutu uygulayın, logların oluşması için biraz bekleyin,
+sudo docker run -dti --name log_producer --rm -v logs:/logs -e TZ=Europe/Istanbul selkes87/python-log_producer
+
+#Kafka producer sunucuya mesajlar göndermektedir, indirip çalıştırmak için aşağıdaki iki satırdaki komutları ayrı ayrı uygulayın,
+sudo docker pull selkes87/python-kafka_producer
+sudo docker run -d --name kafka_producer --network br1 --mount source=logs,target=/logs selkes87/python-kafka_producer
+
+#Kafka consumer sunucudan mesajları okumakta ve elasticsearch 'e göndermektedir, indirip çalıştırmak için aşağıdaki iki satırdaki komutları ayrı ayrı uygulayın,
+sudo docker pull selkes87/python-kafka_consumer
+sudo docker run -d --name kafka_consumer --network br1 selkes87/python-kafka_consumer
+
+################################################
+
+#Elastic search index 'lerini görebilek için aşağıdaki siteye girin,
+http://localhost:9200/_cat/indices?v
+
+#Grafikleri görebilmek için aşağıdaki adresten kibana 'ya ulaşıp, City Log Dashboard 'ı açın,
+#Sağ üst köşeden Today 'i seçip garfikleri büyütün, realtime görmek için sağ üst köşden Auto-refresh özelliğini açın,  
+http://localhost:5601/app/kibana
+
+################################################
+
+#Elasticserch index 'i ni silmek gerektiğinde aşağıdaki komutu uygulayın,
+curl -XDELETE http://localhost:9200/logs-index
+
+#Kafka loglarını silmek gerektiğinde aşağıdaki üç satırdaki komutları ayrı ayrı uygulayın,
+sudo docker run -it --network=br1 spotify/kafka bash
+/opt/kafka_2.11-0.10.1.0/bin/kafka-topics.sh --zookeeper 192.168.0.100:2181 --delete --topic city_logs
+exit
